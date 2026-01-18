@@ -7,8 +7,6 @@
 #include <stdio.h>
 #include <string.h>
 
-// END EDITS ALLOWED
-
 enum {
 	BOARD_SIZE = 8,
 	SQUARE_SIZE = 32,
@@ -20,6 +18,10 @@ typedef struct {
 } Bitboard;
 
 extern void init_board(Bitboard *board);
+extern void click(Bitboard* board, uint8_t rank, uint8_t file);
+// sentinel value of 0xFF
+extern uint8_t selected_rank;
+extern uint8_t selected_file;
 
 const int EMPTY = 0;
 const int PAWN = 1;
@@ -29,18 +31,16 @@ const int ROOK = 4;
 const int QUEEN = 5;
 const int KING = 6;
 const int WHITE_TAG = 0b10000000;
-const int SELECTED_TAG = 0b01000000;
-const int ALLOWED_TAG = 0b00100000;
+const int ALLOWED_TAG = 0b01000000;
 
 static void handle_click(Bitboard *board, int mouse_x, int mouse_y) {
-	int file = mouse_x / SQUARE_SIZE;
-	int rank = mouse_y / SQUARE_SIZE;
+	uint8_t file = mouse_x / SQUARE_SIZE;
+	uint8_t rank = mouse_y / SQUARE_SIZE;
 	if (file < 0 || file >= BOARD_SIZE || rank < 0 || rank >= BOARD_SIZE) {
 		return;
 	}
-
-	int idx = (rank * BOARD_SIZE) + file;
-
+	// int idx = (rank * BOARD_SIZE) + file;
+	click(board, rank, file);
 	//TODO: arm func (update bitboard for click)
 }
 
@@ -49,8 +49,6 @@ static int is_white(uint8_t piece) {
 	// the msb is a tag bit
 	return piece & WHITE_TAG;
 }
-
-// BEGIN EDITS ALLOWED
 
 static void draw_tile(SDL_Renderer *renderer, SDL_Texture *sprites,
 		int tile_index, int x, int y) {
@@ -106,8 +104,6 @@ static void render_board(SDL_Renderer *renderer, const Bitboard *board) {
 
 	SDL_RenderPresent(renderer);
 }
-
-// END EDITS ALLOWED
 
 int main(void) {
 	if (SDL_Init(SDL_INIT_VIDEO) != 0) {

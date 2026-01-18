@@ -7,9 +7,23 @@
 .equ KING, 6
 
 .equ WHITE_TAG, 0x80
+.equ RANK_SENTINEL, 0xFF
+
+.equ ALLOW_MASK, 0x40
+
+.data
+.align 2
+.global _selected_rank
+.global _selected_file
+
+_selected_rank: .byte 0
+_selected_file: .byte 0
+// variables:
+//  0x0, 0x1 [currently clicked rank][currently clicked file] (sentinel value of 0xFF)
 
 // args: x0 -> bitboard pointer (has 64 bytes of mem)
 .global _init_board
+.global _click
 
 _init_board:
     // zero-init the board (the middle portions will stay 0)
@@ -80,4 +94,46 @@ _init_board:
 // we need a click function that will take a board pointer, rank, and file.
 // this click function should check if 
 
+//args x0: board pointer x1: rank (0-indexed, uint8_t) x2: file (letters 0-indexed, uint8_t)
+_click:
 
+    mov w9, #ALLOW_MASK
+    // broadcast disallow mask into vector register
+    dup v0.16b, w9
+
+    // load the full board into vector register
+    ld1 {v1.16b, v2.16b, v3.16b, v4.16b}, [x0]
+
+    // apply the mask to the full board (disallowing every square)
+    // aka clear bit 7
+    bic v1.16b, v1.16b, v0.16b
+    bic v2.16b, v2.16b, v0.16b
+    bic v3.16b, v3.16b, v0.16b
+    bic v4.16b, v4.16b, v0.16b
+
+    // store the full board
+    st1 {v1.16b, v2.16b, v3.16b, v4.16b}, [x0]
+
+    // get last clicked rank + file in a single register
+    adrp x15, _selected_rank@PAGE
+    ldrh w9, [x15, _selected_rank@PAGEOFF]
+    // combine rank + file passed in so they're in the same form
+    // as our memory
+    orr  w1, w2, w1, lsl #8     
+    // we dgaf about the upper 48 bits of x1
+    cmp w9, w1
+    b.ne _clicking_different
+
+    // store sentinel value for last clicked 
+    mov x14, #-1
+    stp x14, x14, [x15, _selected_rank@PAGEOFF]
+
+    ret
+
+_clicking_different:
+    // store the position that was just clicked as currently clicked
+    strb x1, [x15]
+    add x15, x15, #1
+    strb x2, [x15]
+
+    //TODO: finish me
