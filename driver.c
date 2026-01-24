@@ -6,54 +6,52 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
-enum {
-	BOARD_SIZE = 8,
-	SQUARE_SIZE = 32,
-	WINDOW_SIZE = BOARD_SIZE * SQUARE_SIZE
-};
+const uint8_t EMPTY = 0;
+const uint8_t PAWN = 1;
+const uint8_t KNIGHT = 2;
+const uint8_t BISHOP = 3;
+const uint8_t ROOK = 4;
+const uint8_t QUEEN = 5;
+const uint8_t KING = 6;
+const uint8_t WHITE_TAG = 0x80;
+const uint8_t ALLOWED_TAG = 0x40;
+const uint8_t PIECE_DATA_MASK = 0x07;
+
+const int BOARD_SIDE_SIZE = 8;
+const int SQUARE_SIZE_PX = 32;
+const int WINDOW_SIZE = BOARD_SIDE_SIZE * SQUARE_SIZE_PX;
+const int SELECTED_TILE_INDEX_OFFSET = 14;
 
 typedef struct {
-	uint8_t squares[BOARD_SIZE * BOARD_SIZE];
+	uint8_t squares[BOARD_SIDE_SIZE * BOARD_SIDE_SIZE];
 } Bitboard;
 
 extern void init_board(Bitboard *board);
 extern void click(Bitboard* board, uint8_t rank, uint8_t file);
-// sentinel value of 0xFF
 extern uint8_t selected_rank;
 extern uint8_t selected_file;
 
-const int EMPTY = 0;
-const int PAWN = 1;
-const int KNIGHT = 2;
-const int BISHOP = 3;
-const int ROOK = 4;
-const int QUEEN = 5;
-const int KING = 6;
-const int WHITE_TAG = 0b10000000;
-const int ALLOWED_TAG = 0b01000000;
-
 static void handle_click(Bitboard *board, int mouse_x, int mouse_y) {
-	uint8_t file = mouse_x / SQUARE_SIZE;
-	uint8_t rank = mouse_y / SQUARE_SIZE;
-	if (file < 0 || file >= BOARD_SIZE || rank < 0 || rank >= BOARD_SIZE) {
+	uint8_t file = mouse_x / SQUARE_SIZE_PX;
+	uint8_t rank = mouse_y / SQUARE_SIZE_PX;
+	if (file >= BOARD_SIDE_SIZE || rank >= BOARD_SIDE_SIZE) {
 		return;
 	}
-	// int idx = (rank * BOARD_SIZE) + file;
+	// TODO: we might want to use this instead of rank/file at some point
+	// int idx = (rank * BOARD_SIDE_SIZE) + file;
 	click(board, rank, file);
-	//TODO: arm func (update bitboard for click)
 }
 
 // helper function for rendering
 static int is_white(uint8_t piece) {
-	// the msb is a tag bit
 	return piece & WHITE_TAG;
 }
 
-static void draw_tile(SDL_Renderer *renderer, SDL_Texture *sprites,
-		int tile_index, int x, int y) {
-	SDL_Rect src = {tile_index * SQUARE_SIZE, 0, SQUARE_SIZE, SQUARE_SIZE};
-	SDL_Rect dst = {x, y, SQUARE_SIZE, SQUARE_SIZE};
+static void draw_tile(SDL_Renderer *renderer, SDL_Texture *sprites, int tile_index, int x, int y) {
+	SDL_Rect src = {tile_index * SQUARE_SIZE_PX, 0, SQUARE_SIZE_PX, SQUARE_SIZE_PX};
+	SDL_Rect dst = {x, y, SQUARE_SIZE_PX, SQUARE_SIZE_PX};
 	SDL_RenderCopy(renderer, sprites, &src, &dst);
 }
 
@@ -82,21 +80,28 @@ static void render_board(SDL_Renderer *renderer, const Bitboard *board) {
 	SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
 	SDL_RenderClear(renderer);
 
-	for (int rank = 0; rank < BOARD_SIZE; ++rank) {
-		for (int file = 0; file < BOARD_SIZE; ++file) {
-			int idx = (rank * BOARD_SIZE) + file;
-			int x = file * SQUARE_SIZE;
-			int y = rank * SQUARE_SIZE;
+	for (int rank = 0; rank < BOARD_SIDE_SIZE; ++rank) {
+		for (int file = 0; file < BOARD_SIDE_SIZE; ++file) {
+			int idx = (rank * BOARD_SIDE_SIZE) + file;
+			int x = file * SQUARE_SIZE_PX;
+			int y = rank * SQUARE_SIZE_PX;
 			bool dark = ((rank + file) % 2) != 0;
-			int square_tile = dark ? 0 : 1;
 
-			draw_tile(renderer, sprites, square_tile, x, y);
+			int tile_index = dark ? 0 : 1;
+			if(rank == selected_rank && file == selected_file) tile_index += SELECTED_TILE_INDEX_OFFSET;
 
-			uint8_t value = board->squares[idx];
-			uint8_t piece = (uint8_t)(value & 0x7F);
-			if (piece != EMPTY && piece <= KING) {
-				bool white = is_white(value);
-				int piece_tile = white ? (piece + 7) : (piece + 1);
+			draw_tile(renderer, sprites, tile_index, x, y);
+			
+			uint8_t piece = board->squares[idx];
+			// mask away white tag (if it exists)
+			uint8_t piece_without_color = (uint8_t)(board->squares[idx] & PIECE_DATA_MASK);
+			if(piece_without_color > KING) {
+				fprintf(stderr, "invalid piece data at idx %i", idx);
+				return;
+			}
+
+			if (piece_without_color != EMPTY) {
+				int piece_tile = is_white(piece) ? (piece_without_color + 7) : (piece_without_color + 1);
 				draw_tile(renderer, sprites, piece_tile, x, y);
 			}
 		}
