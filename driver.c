@@ -21,6 +21,7 @@ const uint8_t PIECE_DATA_MASK = 0x07;
 
 const int BOARD_SIDE_SIZE = 8;
 const int SQUARE_SIZE_PX = 32;
+const int WINDOW_SCALE = 2;
 const int WINDOW_SIZE = BOARD_SIDE_SIZE * SQUARE_SIZE_PX;
 const int SELECTED_TILE_INDEX_OFFSET = 14;
 const int ALLOWED_TILE_INDEX_OFFSET = 16;
@@ -35,8 +36,10 @@ extern uint8_t selected_rank;
 extern uint8_t selected_file;
 
 static void handle_click(Bitboard *board, int mouse_x, int mouse_y) {
-	uint8_t file = mouse_x / SQUARE_SIZE_PX;
-	uint8_t rank = 7 - (mouse_y / SQUARE_SIZE_PX);
+	int logical_x = mouse_x / WINDOW_SCALE;
+	int logical_y = mouse_y / WINDOW_SCALE;
+	uint8_t file = logical_x / SQUARE_SIZE_PX;
+	uint8_t rank = 7 - (logical_y / SQUARE_SIZE_PX);
 	if (file >= BOARD_SIDE_SIZE || rank >= BOARD_SIDE_SIZE) {
 		return;
 	}
@@ -128,7 +131,7 @@ int main(void) {
 
 	SDL_Window *window = SDL_CreateWindow(
 			"Chess Driver", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-			WINDOW_SIZE, WINDOW_SIZE, SDL_WINDOW_SHOWN);
+			WINDOW_SIZE * WINDOW_SCALE, WINDOW_SIZE * WINDOW_SCALE, SDL_WINDOW_SHOWN);
 	if (window == NULL) {
 		fprintf(stderr, "SDL_CreateWindow failed: %s\n", SDL_GetError());
 		SDL_Quit();
@@ -139,6 +142,13 @@ int main(void) {
 			SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
 	if (renderer == NULL) {
 		fprintf(stderr, "SDL_CreateRenderer failed: %s\n", SDL_GetError());
+		SDL_DestroyWindow(window);
+		SDL_Quit();
+		return 1;
+	}
+	if (SDL_RenderSetScale(renderer, (float)WINDOW_SCALE, (float)WINDOW_SCALE) != 0) {
+		fprintf(stderr, "SDL_RenderSetScale failed: %s\n", SDL_GetError());
+		SDL_DestroyRenderer(renderer);
 		SDL_DestroyWindow(window);
 		SDL_Quit();
 		return 1;
