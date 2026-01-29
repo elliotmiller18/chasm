@@ -23,6 +23,7 @@ const int BOARD_SIDE_SIZE = 8;
 const int SQUARE_SIZE_PX = 32;
 const int WINDOW_SIZE = BOARD_SIDE_SIZE * SQUARE_SIZE_PX;
 const int SELECTED_TILE_INDEX_OFFSET = 14;
+const int ALLOWED_TILE_INDEX_OFFSET = 16;
 
 typedef struct {
 	uint8_t squares[BOARD_SIDE_SIZE * BOARD_SIDE_SIZE];
@@ -35,7 +36,7 @@ extern uint8_t selected_file;
 
 static void handle_click(Bitboard *board, int mouse_x, int mouse_y) {
 	uint8_t file = mouse_x / SQUARE_SIZE_PX;
-	uint8_t rank = mouse_y / SQUARE_SIZE_PX;
+	uint8_t rank = 7 - (mouse_y / SQUARE_SIZE_PX);
 	if (file >= BOARD_SIDE_SIZE || rank >= BOARD_SIDE_SIZE) {
 		return;
 	}
@@ -47,6 +48,10 @@ static void handle_click(Bitboard *board, int mouse_x, int mouse_y) {
 // helper function for rendering
 static int is_white(uint8_t piece) {
 	return piece & WHITE_TAG;
+}
+
+static int allowed(const Bitboard* board, int idx) {
+	return board->squares[idx] & ALLOWED_TAG;
 }
 
 static void draw_tile(SDL_Renderer *renderer, SDL_Texture *sprites, int tile_index, int x, int y) {
@@ -83,12 +88,17 @@ static void render_board(SDL_Renderer *renderer, const Bitboard *board) {
 	for (int rank = 0; rank < BOARD_SIDE_SIZE; ++rank) {
 		for (int file = 0; file < BOARD_SIDE_SIZE; ++file) {
 			int idx = (rank * BOARD_SIDE_SIZE) + file;
+			// printf("%i %i %i\n", rank, file, board->squares[idx]);
 			int x = file * SQUARE_SIZE_PX;
-			int y = rank * SQUARE_SIZE_PX;
+			// flip ts shit
+			int y = WINDOW_SIZE - ((rank + 1) * SQUARE_SIZE_PX);
 			bool dark = ((rank + file) % 2) != 0;
 
 			int tile_index = dark ? 0 : 1;
 			if(rank == selected_rank && file == selected_file) tile_index += SELECTED_TILE_INDEX_OFFSET;
+			else if(allowed(board, idx)) {
+				tile_index += ALLOWED_TILE_INDEX_OFFSET;
+			}
 
 			draw_tile(renderer, sprites, tile_index, x, y);
 			

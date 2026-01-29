@@ -13,16 +13,20 @@ _selected_file: .byte 0xFF
 
 .equ EMPTY, 0
 .equ PAWN, 1
+.equ TEMP_WHITE_PAWN, 0x81
 .equ KNIGHT, 2
 .equ BISHOP, 3
 .equ ROOK, 4
 .equ QUEEN, 5
 .equ KING, 6
 
+//[color][allowed][data1][data2][empty][piece bit 2][piece bit 1][piece bit 0]
 .equ WHITE_TAG, 0x80
 .equ CLICKED_SENTINEL, 0xFFFF
 
 .equ ALLOW_MASK, 0x40
+
+.equ EN_PASSANTABLE_PAWN, 0x21
 
 // args: x0 -> bitboard pointer (has 64 bytes of mem)
 .global _init_board
@@ -82,12 +86,62 @@ _init_board:
 // we need a click function that will take a board pointer, rank, and file.
 // this click function should check if 
 
-//args x0: board pointer x1: rank (0-indexed, uint8_t) x2: file (letters 0-indexed, uint8_t)
+//args x0: board pointer x1: rank (numbers 0-indexed, uint8_t) x2: file (letters 0-indexed, uint8_t)
 _click:
+    // get index by doing rank * 8 and then adding the file
+    add w9, w2, w1, lsl #3
 
-    mov w9, #ALLOW_MASK
-    // broadcast disallow mask into vector register
-    dup v0.16b, w9
+    // get previously selected rank and file into w10 and w11 respectively
+    adrp x15, _selected_rank@GOTPAGE
+    ldr x15, [x15, _selected_rank@GOTPAGEOFF]
+    ldrb w10, [x15]
+    ldrb w11, [x15, #1]
+
+    // get previously selected index in the same way 
+    add w12, w11, w10, lsl #3
+    
+    // if the old and new indices are the same, we want to deselect (clicking the same square twice deselects)
+    // otherwise we check if the player is trying to move a piece (eg they just selected an allowed square)
+    // and if they are move the piece that was previously clicked there, if they didnt click an allowed square
+    // we just select that
+
+    // deselect
+    mov x14, CLICKED_SENTINEL
+    strh w14, [x15]
+    // if the two indices are the same, skip selecting the new index
+    cmp w9, w12
+    b.eq _clear_allowed
+
+    // get clicked square and check if a move there is allowed
+    ldrb w13, [x0, x9]
+    tst w13, #ALLOW_MASK
+    // if we can't move there we want to set previously selected and NOT move any pieces
+    b.eq _set_previously_selected
+
+    // get previously selected piece
+    ldrb w13, [x0, x12]
+    // store previously selected piece in currently selected square
+    strb w13, [x0, x9]
+    // empty the old square 
+    mov x13, EMPTY
+    strb w13, [x0, x12]
+    
+    //HACK: move dummy, identical values into w9 and w12 so that clear_allowed ALWAYS returns
+    mov x9, xzr
+    mov x12, xzr
+    b _clear_allowed
+
+    ret
+
+_set_previously_selected:
+    // store rank + file
+    strb w1, [x15]
+    strb w2, [x15, #1]
+
+_clear_allowed:
+    // broadcast allow mask into vector register
+    mov w14, #ALLOW_MASK
+    dup v0.16b, w14
 
     // load the full board into vector register
     ld1 {v1.16b, v2.16b, v3.16b, v4.16b}, [x0]
@@ -102,27 +156,100 @@ _click:
     // store the full board
     st1 {v1.16b, v2.16b, v3.16b, v4.16b}, [x0]
 
-    // get last clicked rank + file in a single register (w9)
-    adrp x10, _selected_rank@GOTPAGE
-    ldr x10, [x10, _selected_rank@GOTPAGEOFF]
-    ldrh w9, [x10]
-    // combine rank + file passed in so they're in the same form
-    // as our memory (arm is little endian)
-    orr  w1, w1, w2, lsl #8     
-    // we dgaf about the upper 48 bits of x1
-    cmp w9, w1
+    // compare previously and currently selected indexes
+    cmp w9, w12
     b.ne _clicking_different
-
-    // store sentinel value for last clicked rank + file
-    mov w14, #CLICKED_SENTINEL
-    strh w14, [x10]
 
     ret
 
 _clicking_different:
-    // store the position that was just clicked as currently clicked
-    strb w1, [x10]
-    strb w2, [x10, #1]
+    //TODO: finish me with all pieces
+    ldrb w10, [x0, w9, uxtw]
+    cmp w10, #TEMP_WHITE_PAWN
+    b.eq _validate_pawn
 
-    //TODO: finish me
+    ret 
+
+
+// Piece Validators
+_validate_pawn:
+    // gonna do white first and then figure out how to generalize
+    
+    //TODO: this doesnt work for some reason
+    
+    // index above the pawn, we'll never have to worry about this overflowing because a pawn on the
+    // last row simply becomes another piece
+    add w11, w9, #8
+    // get the piece above the pawn, if it's empty allow it
+    ldrb w12, [x0, x11]
+    cmp w12, #EMPTY
+    
+    b.ne _skip_double_checks
+
+    // store an empty that's allowed here, this works with black or white
+    mov w13, #ALLOW_MASK
+    strb w13, [x0, x11]
+
+    // check if we're on rank 2 for double move
+    cmp w1, #1
+    b.ne _skip_double_checks
+
+    add w15, w11, #8
+    // get the piece two above the pawn (x11 is already above)
+    ldrb w12, [x0, x15]
+    mov w13, #ALLOW_MASK
+    cmp w12, #EMPTY
+    // because empty is just 0s the allowed flag is 
+    csel w12, w13, w12, eq
+    strb w12, [x0, x15]
+
+_skip_double_checks:
+
+    sub w15, w11, #1
+    cmp w2, #0
+    b.eq _skip_left_checks
+
+    // up and to the left
+    ldrb w12, [x0, x15]
+    cmp w12, #EMPTY
+    b.eq _skip_left_checks
+
+    orr w13, w12, #ALLOW_MASK
+    tst w12, #WHITE_TAG
+
+    csel w12, w13, w12, eq
+    strb w12, [x0, x15]
+
+    // TODO: en passant
+        // directly to the left, just for en passant 
+        // sub w14, w9, #1
+        // ldrb w12, [x0, x9]
+        // mov w13, #EN_PASSANTABLE_PAWN
+        // tst w12, w13
+
+_skip_left_checks:
+
+    // note: this is just the left check logic except we add instead of sub
+
+    // if we're on the 8th rank skip right check
+    cmp w2, #7
+    b.eq _skip_right_checks
+
+    add w15, w11, #1
+
+    // up and to the right
+    ldrb w12, [x0, x15]
+    cmp w12, #EMPTY
+    b.eq _skip_right_checks
+
+    orr w13, w12, #ALLOW_MASK
+    tst w12, #WHITE_TAG
+
+    csel w12, w13, w12, eq
+    strb w12, [x0, x15]
+
+    //TODO: en passant
+
+_skip_right_checks:
+
     ret
