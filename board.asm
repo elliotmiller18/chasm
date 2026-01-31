@@ -7,6 +7,9 @@
 _selected_rank: .byte 0xFF
 _selected_file: .byte 0xFF
 // DO NOT SEPARATE
+// we're going to toggle this between WHITE_TAG and 0 for quick
+// checks on clicked peices
+_white_to_play: .byte WHITE_TO_PLAY_INIT
 
 .section __TEXT,__text
 .align 4
@@ -22,9 +25,11 @@ _selected_file: .byte 0xFF
 
 //[color][allowed][data1][data2][empty][piece bit 2][piece bit 1][piece bit 0]
 .equ WHITE_TAG, 0x80
+.equ WHITE_TAG_BIT, 7
 .equ CLICKED_SENTINEL, 0xFFFF
 
 .equ ALLOW_MASK, 0x40
+.equ WHITE_TO_PLAY_INIT, 0x01
 
 .equ EN_PASSANTABLE_PAWN, 0x21
 
@@ -118,6 +123,15 @@ _click:
     // if we can't move there we want to set previously selected and NOT move any pieces
     b.eq _set_previously_selected
 
+    // grab turn bit into x12
+    adrp x11, _white_to_play@GOTPAGE
+    ldr x11, [x11, _white_to_play@GOTPAGEOFF]
+    ldrb w13, [x11]
+
+    // flip and store turn bit
+    eor w13, w13, WHITE_TO_PLAY_INIT
+    strb w13, [x11]
+
     // get previously selected piece
     ldrb w13, [x0, x12]
     // store previously selected piece in currently selected square
@@ -125,13 +139,10 @@ _click:
     // empty the old square 
     mov x13, EMPTY
     strb w13, [x0, x12]
-    
     //HACK: move dummy, identical values into w9 and w12 so that clear_allowed ALWAYS returns
     mov x9, xzr
     mov x12, xzr
     b _clear_allowed
-
-    ret
 
 _set_previously_selected:
     // store rank + file
@@ -164,7 +175,21 @@ _clear_allowed:
 
 _clicking_different:
     //TODO: finish me with all pieces
-    ldrb w10, [x0, w9, uxtw]
+    // load just clicked piece
+    ldrb w10, [x0, x9]
+    // load white_to_play bit
+    adrp x11, _white_to_play@GOTPAGE
+    ldr x11, [x11, _white_to_play@GOTPAGEOFF]
+    ldrb w12, [x11]
+    // shift the piece WHITE_TAG_BIT to the right to just get the color tag bit
+    lsr w13, w10, WHITE_TAG_BIT
+    cmp w13, w12
+
+    b.eq _valid_turn
+    ret
+
+_valid_turn:
+    
     cmp w10, #TEMP_WHITE_PAWN
     b.eq _validate_pawn
 

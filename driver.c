@@ -178,7 +178,9 @@ int main(void) {
 			break;
 		}
 	}
-
+	//TODO: call all proper functions to delete SDL stuff,
+	// right now we're leaking quite a lot of memory
+	free(board);
 	SDL_DestroyRenderer(renderer);
 	SDL_DestroyWindow(window);
 	SDL_Quit();
