@@ -16,7 +16,6 @@ _white_to_play: .byte WHITE_TO_PLAY_INIT
 
 .equ EMPTY, 0
 .equ PAWN, 1
-.equ TEMP_WHITE_PAWN, 0x81
 .equ KNIGHT, 2
 .equ BISHOP, 3
 .equ ROOK, 4
@@ -180,17 +179,18 @@ _clicking_different:
     // load white_to_play bit
     adrp x11, _white_to_play@GOTPAGE
     ldr x11, [x11, _white_to_play@GOTPAGEOFF]
-    ldrb w12, [x11]
+    ldrb w5, [x11]
     // shift the piece WHITE_TAG_BIT to the right to just get the color tag bit
     lsr w13, w10, WHITE_TAG_BIT
-    cmp w13, w12
+    cmp w13, w5
 
     b.eq _valid_turn
     ret
 
 _valid_turn:
     
-    cmp w10, #TEMP_WHITE_PAWN
+    bic w10, w10, WHITE_TAG
+    cmp w10, #PAWN
     b.eq _validate_pawn
 
     ret 
@@ -198,14 +198,15 @@ _valid_turn:
 
 // Piece Validators
 _validate_pawn:
-    // gonna do white first and then figure out how to generalize
-    
-    //TODO: this doesnt work for some reason
-    
-    // index above the pawn, we'll never have to worry about this overflowing because a pawn on the
+    cmp w5, WHITE_TO_PLAY_INIT
+    mov w6, #8
+    mov w7, #-8
+    // if it's white to play we do above otherwise below
+    csel w6, w6, w7, eq
+    // index above or below the pawn, we'll never have to worry about this out of bounds-ing because a pawn on the
     // last row simply becomes another piece
-    add w11, w9, #8
-    // get the piece above the pawn, if it's empty allow it
+    add w11, w9, w6
+    // get the piece above or below the pawn, if it's empty allow it
     ldrb w12, [x0, x11]
     cmp w12, #EMPTY
     
@@ -215,12 +216,22 @@ _validate_pawn:
     mov w13, #ALLOW_MASK
     strb w13, [x0, x11]
 
-    // check if we're on rank 2 for double move
-    cmp w1, #1
+    // check if we're on rank 2 or 7 for double move
+    cmp w5, WHITE_TO_PLAY_INIT
+    mov w6, #1
+    mov w7, #6
+    csel w6, w6, w7, eq
+
+    cmp w1, w6
     b.ne _skip_double_checks
 
-    add w15, w11, #8
-    // get the piece two above the pawn (x11 is already above)
+    cmp w5, WHITE_TO_PLAY_INIT
+    mov w6, #8
+    mov w7, #-8
+    csel w6, w6, w7, eq
+
+    add w15, w11, w6
+    // get the piece two above or below the pawn (x11 is already above)
     ldrb w12, [x0, x15]
     mov w13, #ALLOW_MASK
     cmp w12, #EMPTY
@@ -234,7 +245,7 @@ _skip_double_checks:
     cmp w2, #0
     b.eq _skip_left_checks
 
-    // up and to the left
+    // (up or down and) to the left
     ldrb w12, [x0, x15]
     cmp w12, #EMPTY
     b.eq _skip_left_checks
@@ -262,15 +273,19 @@ _skip_left_checks:
 
     add w15, w11, #1
 
-    // up and to the right
+    // up/down and to the right
     ldrb w12, [x0, x15]
     cmp w12, #EMPTY
     b.eq _skip_right_checks
 
     orr w13, w12, #ALLOW_MASK
-    tst w12, #WHITE_TAG
 
-    csel w12, w13, w12, eq
+    // get just color and test it against the current turn holder, if it's eq 
+    // we can't capture otherwise we can
+    lsr w10, w12, WHITE_TAG_BIT
+    cmp w10, w5
+
+    csel w12, w12, w13, eq
     strb w12, [x0, x15]
 
     //TODO: en passant
